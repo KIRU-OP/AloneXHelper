@@ -45,12 +45,18 @@ fi
 log "Updating system & installing packages"
 export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -y
-$SUDO apt-get upgrade -y
-$SUDO apt-get install -y \
+$SUDO apt-get install -y --no-install-recommends \
   git curl nano tmux \
   python3 python3-pip python3-venv \
   ffmpeg libgl1 libglx-mesa0 \
   build-essential python3-dev libffi-dev libssl-dev
+$SUDO apt-get clean
+
+# Disk space check (need roughly 3 GB free)
+FREE_MB="$(df -Pm . | awk 'NR==2{print $4}')"
+if [ "$FREE_MB" -lt 3000 ]; then
+  die "Only ${FREE_MB} MB free. Free up space first (pip cache purge; apt-get clean)."
+fi
 
 # ---------- 2. Python version check (repo wants 3.12) ----------
 WANT_PY="$(tr -d '[:space:]' < .python-version 2>/dev/null || echo 3.12)"
@@ -79,8 +85,9 @@ source "${VENV_DIR}/bin/activate"
 
 # ---------- 5. Python dependencies ----------
 log "Installing Python requirements"
-pip install -U pip wheel setuptools
-pip install -U -r requirements.txt
+pip install --no-cache-dir -U pip wheel setuptools
+pip install --no-cache-dir -U -r requirements.txt
+pip cache purge >/dev/null 2>&1 || true
 
 # ---------- 6. .env file ----------
 if [ ! -f .env ]; then
