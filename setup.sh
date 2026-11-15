@@ -89,47 +89,95 @@ pip install --no-cache-dir -U pip wheel setuptools
 pip install --no-cache-dir -U -r requirements.txt
 pip cache purge >/dev/null 2>&1 || true
 
-# ---------- 6. .env file ----------
+# ---------- 6. Interactive .env configuration ----------
+ENV_KEYS=(TOKEN DB_URL DB_URL2 API_ID API_HASH GROQ_API_KEY GEMINI_API_KEY ALONE_OWNER_ID LOG_GROUP_ID SUPPORT_CHAT UPDATE_CHANNEL)
+
 if [ ! -f .env ]; then
-  log "Creating .env template"
-  cat > .env <<'EOF'
-TOKEN=
-DB_URL=
-DB_URL2=
-API_ID=
-API_HASH=
-GROQ_API_KEY=
-GEMINI_API_KEY=
-ALONE_OWNER_ID=
-LOG_GROUP_ID=
-SUPPORT_CHAT=
-UPDATE_CHANNEL=
-EOF
+  touch .env
   chmod 600 .env
-  warn "Fill in your values:  nano .env"
-else
-  log ".env already exists - preserving existing values"
 fi
 
-# Ensure every supported setting exists without overwriting existing values.
-ENV_KEYS=(TOKEN DB_URL DB_URL2 API_ID API_HASH GROQ_API_KEY GEMINI_API_KEY ALONE_OWNER_ID LOG_GROUP_ID SUPPORT_CHAT UPDATE_CHANNEL)
-for key in "${ENV_KEYS[@]}"; do
-  if ! grep -qE "^${key}=" .env; then
-    printf '%s=\n' "$key" >> .env
-    log "Added missing .env setting: $key"
-  fi
-done
-chmod 600 .env
+log "Configure bot credentials"
+cat <<'ENVHELP'
 
-# Check every setting requested by the project owner.
+Enter your own values when prompted. Leave a field blank to keep its
+current .env value (or leave it empty if it has never been configured).
+
+TOKEN=YOUR BOT TOKEN
+DB_URL=YOUR MONGO DB
+DB_URL2=YOUR MONGO DB
+API_ID=YOUR TELEGRAM API ID
+API_HASH=YOUR TELEGRAM API HASH
+GROQ_API_KEY=YOUR GROQ API KEY
+GEMINI_API_KEY=YOUR GEMINI API KEY
+ALONE_OWNER_ID=BOT OWNER ID
+LOG_GROUP_ID=BOT LOGGER GROUP
+SUPPORT_CHAT=YOUR SUPPORT GROUP
+UPDATE_CHANNEL=YOUR SUPPORT CHANNEL
+
+ENVHELP
+
+get_env_value() {
+  grep -m1 -E "^$1=" .env 2>/dev/null | cut -d= -f2- || true
+}
+
+for key in "${ENV_KEYS[@]}"; do
+  current="$(get_env_value "$key")"
+  if [[ "$key" == "TOKEN" || "$key" == "DB_URL" || "$key" == "DB_URL2" || "$key" == "API_HASH" || "$key" == "GROQ_API_KEY" || "$key" == "GEMINI_API_KEY" ]]; then
+    if [ -n "$current" ]; then
+      read -r -s -p "$key (press Enter to keep saved value): " value
+      printf '\n'
+    else
+      read -r -s -p "$key: " value
+      printf '\n'
+    fi
+  else
+    if [ -n "$current" ]; then
+      read -r -p "$key (press Enter to keep saved value): " value
+    else
+      read -r -p "$key: " value
+    fi
+  fi
+  if [ -z "$value" ]; then value="$current"; fi
+  export "ALONEX_ENV_$key=$value"
+done
+
+# Update only the known keys; preserve comments, unknown settings and all
+# previously saved values when the user presses Enter.
+python3 - <<'PYENV'
+import os
+from pathlib import Path
+
+path = Path(".env")
+keys = "TOKEN DB_URL DB_URL2 API_ID API_HASH GROQ_API_KEY GEMINI_API_KEY ALONE_OWNER_ID LOG_GROUP_ID SUPPORT_CHAT UPDATE_CHANNEL".split()
+lines = path.read_text().splitlines() if path.exists() else []
+values = {key: os.environ.get("ALONEX_ENV_" + key, "") for key in keys}
+seen = set()
+out = []
+for line in lines:
+    if "=" in line and not line.lstrip().startswith("#"):
+        key = line.split("=", 1)[0].strip()
+        if key in values:
+            if key not in seen:
+                out.append(f"{key}={values[key]}")
+                seen.add(key)
+            continue
+    out.append(line)
+for key in keys:
+    if key not in seen:
+        out.append(f"{key}={values[key]}")
+path.write_text("\n".join(out) + "\n")
+os.chmod(path, 0o600)
+PYENV
+
 missing=()
 for key in "${ENV_KEYS[@]}"; do
-  val="$(grep -E "^${key}=" .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  val="$(get_env_value "$key")"
   [ -n "$val" ] || missing+=("$key")
 done
 if [ "${#missing[@]}" -gt 0 ]; then
-  warn "Empty in .env: ${missing[*]}"
-  warn "Edit with 'nano .env' (Ctrl+X, Y, Enter to save), then start the bot."
+  warn "Still empty in .env: ${missing[*]}"
+  warn "Run 'bash setup' again to complete these values, or edit with 'nano .env'."
 fi
 
 # ---------- 7. Done ----------
