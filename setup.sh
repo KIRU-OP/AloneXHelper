@@ -108,12 +108,22 @@ EOF
   chmod 600 .env
   warn "Fill in your values:  nano .env"
 else
-  log ".env already exists - leaving it untouched"
+  log ".env already exists - preserving existing values"
 fi
 
-# Quick check for required values
+# Ensure every supported setting exists without overwriting existing values.
+ENV_KEYS=(TOKEN DB_URL DB_URL2 API_ID API_HASH GROQ_API_KEY GEMINI_API_KEY ALONE_OWNER_ID LOG_GROUP_ID SUPPORT_CHAT UPDATE_CHANNEL)
+for key in "${ENV_KEYS[@]}"; do
+  if ! grep -qE "^${key}=" .env; then
+    printf '%s=\n' "$key" >> .env
+    log "Added missing .env setting: $key"
+  fi
+done
+chmod 600 .env
+
+# Check every setting requested by the project owner.
 missing=()
-for key in TOKEN DB_URL API_ID API_HASH ALONE_OWNER_ID; do
+for key in "${ENV_KEYS[@]}"; do
   val="$(grep -E "^${key}=" .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
   [ -n "$val" ] || missing+=("$key")
 done
