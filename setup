@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Compatibility entrypoint: run the full standard setup.
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "${SCRIPT_DIR}/setup.sh" ]]; then
+  echo "[ERROR] setup.sh is missing from ${SCRIPT_DIR}" >&2
+  exit 1
+fi
+exec bash "${SCRIPT_DIR}/setup.sh" "$@"
